@@ -1,0 +1,21 @@
+[submodule "reference-code/reconstruction-server"]
+	path = reference-code/reconstruction-server
+	url = https://github.com/aukilabs/reconstruction-server
+[submodule "reference-code/splatter-server"]
+	path = reference-code/splatter-server
+	url = https://github.com/aukilabs/splatter-server
+[submodule "reference-code/posemesh"]
+	path = reference-code/posemesh
+	url = https://github.com/aukilabs/posemesh
+[submodule "reference-code/domain-viewer"]
+	path = reference-code/domain-viewer
+	url = https://github.com/aukilabs/domain-viewer
+[submodule "reference-code/pathfinding"]
+	path = reference-code/pathfinding
+	url = https://github.com/aukilabs/pathfinding
+[submodule "reference-code/auki_robotics"]
+	path = reference-code/auki_robotics
+	url = https://github.com/aukilabs/auki_robotics
+[submodule "reference-code/domain-spatial-computer"]
+	path = reference-code/domain-spatial-computer
+	url = https://github.com/aukilabs/domain-spatial-computer

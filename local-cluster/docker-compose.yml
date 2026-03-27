@@ -1,0 +1,449 @@
+services:
+  # ============================================================
+  #  Infrastructure — databases, Redis, MinIO
+  # ============================================================
+
+  api-postgres:
+    image: postgres:17
+    restart: on-failure
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: api
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d api"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+
+  dds-postgres:
+    image: postgis/postgis:latest
+    platform: linux/amd64
+    restart: on-failure
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: dds
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d dds"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+
+  ds-postgres:
+    image: postgres:17
+    restart: on-failure
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: domain-server
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d domain-server"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+
+  dms-postgres:
+    image: postgres:16-alpine
+    restart: on-failure
+    ports:
+      - "5436:5432"
+    environment:
+      POSTGRES_USER: dms
+      POSTGRES_PASSWORD: dms_dev
+      POSTGRES_DB: dms
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dms -d dms"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+
+  ncs-postgres:
+    image: postgres:17
+    restart: on-failure
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: network-credit-service
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d network-credit-service"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    restart: on-failure
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: quay.io/minio/minio:latest
+    restart: on-failure
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio-create-buckets:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set local http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb --ignore-existing local/test;
+      exit 0;
+      "
+
+  # ============================================================
+  #  Migrators
+  # ============================================================
+
+  api-migrator:
+    image: aukilabs/pgmigrator:latest
+    depends_on:
+      api-postgres:
+        condition: service_healthy
+    restart: on-failure
+    environment:
+      MIGRATE_URL: postgres://test:test@api-postgres/api?sslmode=disable
+      MIGRATE_SOURCES: file:///data/migrations
+      WAIT_FOR_IT_HOST: api-postgres
+      WAIT_FOR_IT_PORT: 5432
+    volumes:
+      - ../reference-code/api/data/migrations:/data/migrations
+
+  dds-migrator:
+    image: aukilabs/pgmigrator:latest
+    depends_on:
+      dds-postgres:
+        condition: service_healthy
+    restart: on-failure
+    environment:
+      MIGRATE_URL: postgres://test:test@dds-postgres/dds?sslmode=disable
+      MIGRATE_SOURCES: file:///data/migrations
+      WAIT_FOR_IT_HOST: dds-postgres
+      WAIT_FOR_IT_PORT: 5432
+    volumes:
+      - ../reference-code/domain-service/data/migrations:/data/migrations
+
+  ds-migrator:
+    image: aukilabs/pgmigrator:latest
+    depends_on:
+      ds-postgres:
+        condition: service_healthy
+    restart: on-failure
+    environment:
+      MIGRATE_URL: postgres://test:test@ds-postgres/domain-server?sslmode=disable
+      MIGRATE_SOURCES: file:///data/migrations
+      WAIT_FOR_IT_HOST: ds-postgres
+      WAIT_FOR_IT_PORT: 5432
+    volumes:
+      - ../reference-code/domain-service/domain-server/data/migrations:/data/migrations
+
+  ncs-migrator:
+    image: aukilabs/pgmigrator:latest
+    depends_on:
+      ncs-postgres:
+        condition: service_healthy
+    restart: on-failure
+    environment:
+      MIGRATE_URL: postgres://test:test@ncs-postgres/network-credit-service?sslmode=disable
+      MIGRATE_SOURCES: file:///data/migrations
+      WAIT_FOR_IT_HOST: ncs-postgres
+      WAIT_FOR_IT_PORT: 5432
+    volumes:
+      - ../reference-code/network-credit-service/data/migrations:/data/migrations
+
+  # DMS uses SQLx migrations at startup — no separate migrator needed.
+
+  # ============================================================
+  #  Seed data
+  # ============================================================
+
+  api-seed:
+    image: postgres:17
+    depends_on:
+      api-migrator:
+        condition: service_completed_successfully
+    restart: on-failure
+    command: psql -f /data/seed/api-seed.sql postgres://test:test@api-postgres/api?sslmode=disable
+    volumes:
+      - ./seed:/data/seed
+
+  dds-seed:
+    image: postgres:17
+    depends_on:
+      dds-migrator:
+        condition: service_completed_successfully
+    restart: on-failure
+    command: psql -f /data/seed/dds-seed.sql postgres://test:test@dds-postgres/dds?sslmode=disable
+    volumes:
+      - ./seed:/data/seed
+
+  ds-register:
+    image: alpine:3
+    depends_on:
+      dds:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      api-seed:
+        condition: service_completed_successfully
+    restart: on-failure
+    volumes:
+      - ds-shared:/shared
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apk add --no-cache curl jq > /dev/null 2>&1
+        set -e
+
+        echo "Logging in to API..."
+        LOGIN=$$(curl -sf -X POST \
+          -H "Content-Type: application/json" \
+          -d '{"email":"test@test.com","password":"testtest"}' \
+          http://api:4002/user/login)
+        USER_TOKEN=$$(echo "$${LOGIN}" | jq -r '.access_token')
+
+        echo "Getting DDS access token..."
+        DDS_TOKEN_RESP=$$(curl -sf -X POST \
+          -H "Authorization: Bearer $${USER_TOKEN}" \
+          http://api:4002/service/domains-access-token)
+        DDS_TOKEN=$$(echo "$${DDS_TOKEN_RESP}" | jq -r '.access_token')
+
+        echo "Registering DS node with DDS..."
+        HTTP_CODE=$$(curl -s -o /tmp/reg.json -w '%{http_code}' -X POST \
+          -H "Authorization: Bearer $${DDS_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d '{"name":"local-ds","mode":"public"}' \
+          http://dds:8080/api/v1/nodes)
+
+        if [ "$${HTTP_CODE}" = "409" ]; then
+          echo "Node 'local-ds' already exists — deleting old node..."
+          NODES=$$(curl -sf -H "Authorization: Bearer $${DDS_TOKEN}" \
+            http://dds:8080/api/v1/nodes)
+          OLD_ID=$$(echo "$${NODES}" | jq -r '.nodes[] | select(.name == "local-ds") | .id')
+          if [ -n "$${OLD_ID}" ]; then
+            curl -sf -X DELETE \
+              -H "Authorization: Bearer $${DDS_TOKEN}" \
+              http://dds:8080/api/v1/nodes/$${OLD_ID} || true
+            echo "Deleted old node $${OLD_ID}"
+          fi
+          echo "Creating new node..."
+          curl -sf -o /tmp/reg.json -X POST \
+            -H "Authorization: Bearer $${DDS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"local-ds","mode":"public"}' \
+            http://dds:8080/api/v1/nodes
+        elif [ "$${HTTP_CODE}" != "201" ] && [ "$${HTTP_CODE}" != "200" ]; then
+          echo "Registration failed with HTTP $${HTTP_CODE}:"
+          cat /tmp/reg.json
+          exit 1
+        fi
+
+        REG=$$(cat /tmp/reg.json)
+        echo "Registration response: $${REG}"
+        NODE_ID=$$(echo "$${REG}" | jq -r '.id')
+        REG_SECRET=$$(echo "$${REG}" | jq -r '.registration_secret')
+        CREDS=$$(printf '%s:%s' "$${NODE_ID}" "$${REG_SECRET}" | base64)
+        echo "$${CREDS}" > /shared/ds-credentials
+        echo "Credentials written to /shared/ds-credentials"
+
+  # ============================================================
+  #  Services
+  # ============================================================
+
+  api:
+    build:
+      context: ../reference-code/api
+      dockerfile: Dockerfile
+    ports:
+      - "4002:4002"
+    depends_on:
+      api-migrator:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      API_SERVICE_TOKEN_PRIVATE_KEY: ${EC_PRIVATE_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:4002/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  dds:
+    build:
+      context: ../reference-code/domain-service
+      dockerfile: dds/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      dds-migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DDS_SERVICE_TOKEN_PRIVATE_KEY: ${EC_PRIVATE_KEY}
+      DDS_REDIS_ADDR: redis:6379
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  ds:
+    build:
+      context: ../reference-code/domain-service
+      dockerfile: domain-server/Dockerfile
+    entrypoint: ["/scripts/ds-entrypoint.sh"]
+    ports:
+      - "4000:4000"
+    depends_on:
+      ds-migrator:
+        condition: service_completed_successfully
+      ds-register:
+        condition: service_completed_successfully
+      dds:
+        condition: service_healthy
+    env_file: .env
+    user: "0:0"
+    volumes:
+      - ds-data:/data/volume
+      - ds-shared:/shared:ro
+      - ./scripts:/scripts:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  ncs:
+    build:
+      context: ../reference-code/network-credit-service
+      dockerfile: Dockerfile
+    ports:
+      - "4008:4008"
+      - "18190:18190"
+    depends_on:
+      ncs-migrator:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      NCS_SERVICE_TOKEN_PRIVATE_KEY: ${EC_PRIVATE_KEY}
+      NCS_EXCLUDED_ADDRESSES: '["0x0000000000000000000000000000000000000001"]'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:18190/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  dms:
+    build:
+      context: ..
+      dockerfile: local-cluster/dockerfiles/dms.Dockerfile
+    ports:
+      - "8081:8080"
+      - "18191:18190"
+    depends_on:
+      dms-postgres:
+        condition: service_healthy
+      dds:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      ADMIN_PORT: 18190
+      DATABASE_URL: postgres://dms:dms_dev@dms-postgres/dms
+      LOG_LEVEL: info
+      LEASE_SWEEPER_INTERVAL_MS: 30000
+      TASK_LEASE_TTL_SECONDS: 60
+      DDS_ISSUER: dds
+      DDS_AUDIENCE: local-dev
+      DDS_SERVICE_PUBLIC_KEY_URL: http://dds:8080/service/public-key.pem
+      DDS_SERVICE_TOKEN_SIGNING_METHOD: ES256
+      DDS_ADMIN_URL: http://dds:8080
+      DDS_HEARTBEAT_INTERVAL_MS: 30000
+      CREDIT_LOCKING_ENABLED: "false"
+    # Healthcheck is built into the Dockerfile (HEALTHCHECK directive)
+
+  console:
+    build:
+      context: ../reference-code/console
+      dockerfile: ../../local-cluster/dockerfiles/console.Dockerfile
+      args:
+        VITE_API_URL: http://localhost:4002
+        VITE_DDS_URL: http://localhost:8080
+        VITE_NCS_URL: http://localhost:4008
+        VITE_DOCUMENTATION_URL: https://documentation.dev.aukiverse.com
+        VITE_CONTRACTS_CHAIN_ID: "0x2105"
+        VITE_CONTRACTS_CHAIN_NAME: "Base Mainnet"
+        VITE_CONTRACTS_CHAIN_CURRENCY_NAME: "ETH"
+        VITE_CONTRACTS_CHAIN_CURRENCY_SYMBOL: "ETH"
+        VITE_CONTRACTS_CHAIN_RPC_URL: "https://mainnet.base.org"
+        VITE_AUKI_TOKEN_ADDRESS: "0xc9C8d91255843081c9329F1da755414055BB07C1"
+        VITE_BURN_CONTRACT_ADDRESS: "0x5f618762f477131486B096149AcA28aB1E1b2fd8"
+        VITE_DEDICATED_MODE_STAKING_CONTRACT_ADDRESS: "0x10cDaF520E4AEA71476EC70445569D3585ef9A35"
+        VITE_PUBLIC_MODE_STAKING_CONTRACT_ADDRESS: "0x1E82De581c9d432397f8290A2E6fF476D9B9A513"
+        VITE_COMPUTE_DEDICATED_MODE_STAKING_CONTRACT_ADDRESS: "0xaEdB291Da4b9cD37Bd915e5a14a7ef6f684245F8"
+        VITE_COMPUTE_PUBLIC_MODE_STAKING_CONTRACT_ADDRESS: "0x6E3c651863833cb6E0D16A7c85C12078c6878dec"
+        VITE_REWARD_LIQUIDITY_POOL_CONTRACT_ADDRESS: "0xd3E6E8b5e4D9cb405D7B9c5907cdcf40463b3345"
+        VITE_DOMAIN_NFT_ADDRESS: "0xC274aF0578E0B8b70474700821E1851013229B24"
+        VITE_DOMAIN_NFT_STAKING_CONTRACT_ADDRESS: "0x64B9b9B0e366584870F3aE4D98db9De9Cd60C2b2"
+        VITE_CONFIRMATION_COUNT: "3"
+        VITE_WALLETCONNECT_PROJECT_ID: "8494bff47f7ffdd3da629c844c7e24d1"
+        VITE_REWARD_DURATION_SECS: "604800"
+        VITE_TOTAL_REWARD_BUDGET: "250000"
+        VITE_BASE_REWARD_BUDGET: "0"
+        VITE_PER_ZONE_REWARD_BUDGET: "5000"
+        VITE_PER_ISP_REWARD_CAP: "5000"
+        VITE_DS_REWARD_DURATION_SECS: "604800"
+        VITE_DS_TOTAL_REWARD_BUDGET: "300000"
+        VITE_DS_BASE_REWARD_BUDGET: "0"
+        VITE_DS_PER_ZONE_REWARD_BUDGET: "5000"
+        VITE_DS_PER_ISP_REWARD_CAP: "5000"
+    ports:
+      - "3000:80"
+    depends_on:
+      api:
+        condition: service_healthy
+      dds:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  ds-data:
+  ds-shared:

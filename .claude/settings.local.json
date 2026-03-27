@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(just:*)",
+      "Bash(echo exit: $?:*)",
+      "Bash(printf abc\\\\n123\\\\ndef:*)",
+      "Bash(just diff:*)",
+      "Bash(just log:*)",
+      "Bash(chmod +x:*)"
+    ]
+  }
+}
