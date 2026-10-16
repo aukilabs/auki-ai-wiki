@@ -31,6 +31,47 @@ This workspace contains **public** reference code as git submodules under `refer
 
 ---
 
+## Example Projects
+
+Before building something new, read a working project and copy its patterns.
+
+### Main example: Domain Harness — https://github.com/aukilabs/domain-harness
+
+A component-based spatial mapping prototype on the Auki SDK (Rust). A **Home** server builds a
+canonical scene from calibrated peer observations and serves a Three.js viewer; **Bracketbot
+runners** localize against portals and stream poses, cameras and voxel maps; an **iPhone
+Annotator** (Swift/ARKit + Rust SDK bridge) aligns to a portal, places persistent annotations and
+contributes LiDAR depth. Peers communicate over authenticated SDK Component protocols. Use it as
+the end-to-end reference for networking, calibration and live spatial data.
+
+Demo video (multiple phones and robots mapping a scene together in real time):
+https://x.com/broodsugar/status/2110905187896529081
+
+### Floorcraft: Blasters — https://github.com/matterless/floorcraft-blasters
+
+Source of Floorcraft (https://www.auki.com/solutions/software/floorcraft), a multiplayer
+shared-AR racing game in Unity — scan a QR code to join friends' arena in the same physical space.
+**Built on the deprecated ConjureKit Unity SDK**: use it as a reference for shared-AR gameplay and
+QR session joining, not as the SDK to start new work on.
+
+### Helper repos and other examples
+
+| Repo | Use it for |
+|------|------------|
+| https://github.com/aukilabs/auki-sdk | The SDK — helper functions, tools and docs for networking, calibration, marker detection, etc. |
+| https://github.com/aukilabs/qr-lab | Just the QR code tooling |
+| https://github.com/aukilabs/pnp-lab | Helpers for PnP calibration |
+| https://github.com/aukilabs/experimental-modules | Authentication helpers — use the App Key / Secret from the console |
+| https://github.com/aukilabs/domain-viewer | Example 3D web viewer for domain data |
+| https://github.com/aukilabs/auki_robotics | Index of robotics integrations (general robots and Unitree G1) |
+| https://github.com/aukilabs/auki_robotics_domain_calibrator | Calibrate a robot into a domain |
+| https://github.com/aukilabs/auki_robotics_map_utils | Robot map utilities |
+| https://github.com/aukilabs/auki_robotics_g1_humanoid_ros2 | Unitree G1 humanoid ROS 2 integration |
+| https://github.com/aukilabs/domain-spatial-computer | Spatial queries on domain data — pathfinding, raycast, navmesh projection |
+| https://github.com/aukilabs/pathfinding | Navmesh/graph pathfinding library |
+
+---
+
 ## Hosted Services (source not included)
 
 The following backend services are **not** checked out in this workspace but are documented here
