@@ -34,7 +34,7 @@ ARG VITE_DS_PER_ISP_REWARD_CAP
 ARG VITE_APP_VERSION
 WORKDIR /app
 COPY package.json package-lock.json /app/
-RUN npm install
+RUN npm ci
 COPY ./ /app
 ENV VITE_APP_VERSION=$VITE_APP_VERSION
 RUN npm run build
